@@ -8,9 +8,11 @@ import (
 )
 
 const (
-	baseUrl      = "https://api-football-v1.p.rapidapi.com/v3/standings"
+	playersUrl   = "https://api-football-v1.p.rapidapi.com/v3/players"
+	standingUrl  = "https://api-football-v1.p.rapidapi.com/v3/standings"
+	fixtureUrl   = "https://api-football-v1.p.rapidapi.com/v3/fixtures"
 	apiKeyKey    = "X-RapidAPI-Key"
-	apiKeyValue  = "59b585f5a0mshe6fac969f3271a0p16fe19jsnf484b32978bd"
+	apiKeyValue  = ""
 	apiHostKey   = "X-RapidAPI-Host"
 	apiHostValue = "api-football-v1.p.rapidapi.com"
 )
@@ -24,6 +26,84 @@ func main() {
 	}
 
 	pullStanding(db, 39, 2020)
+	pullFixtures(db, 20, 2017)
+	pullPlayers(db, 39, 2020, 33)
+}
+
+func pullPlayers(db *gorm.DB, league int, season int, team int) error {
+	if db.Migrator().HasTable(&player{}) == false {
+		db.AutoMigrate(&player{})
+	}
+	if db.Migrator().HasTable(&statistic{}) == false {
+		db.AutoMigrate(&statistic{})
+	}
+	kvp := make(map[string]string)
+	kvp["season"] = fmt.Sprintf("%d", season)
+	kvp["league"] = fmt.Sprintf("%d", league)
+	kvp["team"] = fmt.Sprintf("%d", team)
+	kvh := make(map[string]string)
+	kvh[apiKeyKey] = apiKeyValue
+	kvh[apiHostKey] = apiHostValue
+	data, err := httpGet(playersUrl, kvp, kvh)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	var rsp playerRsp
+	err = json.Unmarshal(data, &rsp)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	if len(rsp.Response) > 0 {
+		for _, p := range rsp.Response {
+			var teamName string
+			var leagueName string
+			for _, s := range p.Statistics {
+				s.PlayerId = p.Player.PlayerId
+				teamName = s.Team.TeamName
+				leagueName = s.League.LeagueName
+				db.Create(s)
+			}
+			p.Player.Season = season
+			p.Player.TeamId = team
+			p.Player.LeagueId = league
+			p.Player.TeamName = teamName
+			p.Player.LeagueName = leagueName
+			db.Create(p.Player)
+		}
+	}
+	return nil
+}
+
+func pullFixtures(db *gorm.DB, league int, season int) error {
+	if db.Migrator().HasTable(&Fixture{}) == false {
+		db.AutoMigrate(&Fixture{})
+	}
+	kvp := make(map[string]string)
+	kvp["season"] = fmt.Sprintf("%d", season)
+	kvp["league"] = fmt.Sprintf("%d", league)
+	kvh := make(map[string]string)
+	kvh[apiKeyKey] = apiKeyValue
+	kvh[apiHostKey] = apiHostValue
+	data, err := httpGet(fixtureUrl, kvp, kvh)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	var rsp fixturesRsp
+	err = json.Unmarshal(data, &rsp)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	if len(rsp.Response) > 0 {
+		for _, f := range rsp.Response {
+
+			db.Create(f)
+		}
+	}
+	return nil
 }
 
 func pullStanding(db *gorm.DB, league int, season int) error {
@@ -39,7 +119,7 @@ func pullStanding(db *gorm.DB, league int, season int) error {
 	kvh := make(map[string]string)
 	kvh[apiKeyKey] = apiKeyValue
 	kvh[apiHostKey] = apiHostValue
-	data, err := httpGet(baseUrl, kvp, kvh)
+	data, err := httpGet(standingUrl, kvp, kvh)
 	if err != nil {
 		fmt.Println(err)
 		return err
